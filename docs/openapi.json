@@ -1,0 +1,4794 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "GeneSilico EHR API",
+        "summary": "Ontada (iKnowMed) FHIR + Stedi eligibility for Texas Oncology.",
+        "description": "\nBackend for the pre-authorisation workflow: pull a patient's record from the\nEHR, price their planned treatment against their real insurance benefits, and\nsay plainly what cannot be done.\n\n### The one design rule\n\n**Never invent a clinical or financial value.** When an upstream cannot answer,\nthe response says so \u2014 with the upstream's own message and a resolution \u2014\nrather than substituting a plausible number. `GET /api/capabilities` is the\nauthoritative statement of what this deployment can actually do; the UI reads\nit to disable controls instead of letting them fail when pressed.\n\n### Three limits worth knowing before you integrate\n\n* **There is no prior-authorisation submission.** X12 278 does not exist on\n  Stedi \u2014 verified against both a test and a production key, every candidate\n  path 404s. `POST /api/preauth/{id}/submit` therefore returns **501** with the\n  reason rather than minting an authorisation number nobody issued.\n* **Ontada cannot be reached server-to-server.** The gateway advertises\n  `authorization_code` only, so a person completes a browser login once and the\n  refresh token carries it from there. Endpoints that need it answer **428**\n  `ontada_not_connected` until that happens.\n* **Money is in cents**, always integers. Line arithmetic has to be exact.\n\n### Errors\n\nEvery non-2xx response is the same envelope:\n\n```json\n{ \"error\": { \"code\": \"unconfigured\", \"message\": \"\u2026\", \"detail\": { } } }\n```\n\n`code` is machine-readable; `message` preserves the upstream's own words,\nbecause a payer saying \"member not found\" is the useful part of the response.\n",
+        "contact": {
+            "name": "GeneSilico",
+            "email": "developers@genesilico.ai"
+        },
+        "version": "0.1.0"
+    },
+    "servers": [
+        {
+            "url": "http://localhost:8090",
+            "description": "Local"
+        }
+    ],
+    "paths": {
+        "/api/health": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health",
+                "operationId": "health_api_health_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Health"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/capabilities": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Capabilities",
+                "description": "What this deployment can genuinely do, and what it cannot.\n\nEvery `available: false` carries the reason, so a screen can say why a\ncontrol is disabled instead of failing when it is pressed.",
+                "operationId": "capabilities_api_capabilities_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Capabilities"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/payers": {
+            "get": {
+                "tags": [
+                    "payers"
+                ],
+                "summary": "Search Payers",
+                "operationId": "search_payers_api_payers_get",
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 2,
+                            "title": "Q"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 10,
+                            "title": "Limit"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PayerSearch"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/eligibility/form": {
+            "get": {
+                "tags": [
+                    "eligibility"
+                ],
+                "summary": "Get Form",
+                "description": "The payer-specific field schema the UI renders.",
+                "operationId": "get_form_api_eligibility_form_get",
+                "parameters": [
+                    {
+                        "name": "insurer",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "description": "Payer name as the user typed it",
+                            "default": "",
+                            "title": "Insurer"
+                        },
+                        "description": "Payer name as the user typed it"
+                    },
+                    {
+                        "name": "payer_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "description": "Stedi trading partner service id",
+                            "default": "",
+                            "title": "Payer Id"
+                        },
+                        "description": "Stedi trading partner service id"
+                    },
+                    {
+                        "name": "plan_type",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "",
+                            "title": "Plan Type"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PolicyForm"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/eligibility/run": {
+            "post": {
+                "tags": [
+                    "eligibility"
+                ],
+                "summary": "Run",
+                "description": "Validate the form, then either call the payer or replay a stored 271.",
+                "operationId": "run_api_eligibility_run_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RunRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/EligibilityRun"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/eligibility/replays": {
+            "get": {
+                "tags": [
+                    "eligibility"
+                ],
+                "summary": "Replays",
+                "description": "Stored 271 responses available for replay.",
+                "operationId": "replays_api_eligibility_replays_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReplayList"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/ontada/authorize": {
+            "get": {
+                "tags": [
+                    "ontada"
+                ],
+                "summary": "Authorize",
+                "description": "Begin the SMART launch. The browser must open `authorize_url` \u2014 the\ngateway sits behind a WAF that rejects non-browser clients.",
+                "operationId": "authorize_api_ontada_authorize_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OntadaAuthorize"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/ontada/callback": {
+            "get": {
+                "tags": [
+                    "ontada"
+                ],
+                "summary": "Callback",
+                "operationId": "callback_api_ontada_callback_get",
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Code"
+                        }
+                    },
+                    {
+                        "name": "state",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "State"
+                        }
+                    },
+                    {
+                        "name": "error",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Error"
+                        }
+                    },
+                    {
+                        "name": "error_description",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Error Description"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/ontada/status": {
+            "get": {
+                "tags": [
+                    "ontada"
+                ],
+                "summary": "Status",
+                "operationId": "status_api_ontada_status_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OntadaStatus"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/ontada/record": {
+            "get": {
+                "tags": [
+                    "ontada"
+                ],
+                "summary": "Record",
+                "description": "The authorised patient's oncology record, straight from iKnowMed.\n\nPer-resource read failures are reported in `errors` rather than dropped, so\n\"none on file\" stays distinguishable from \"we could not read it\".",
+                "operationId": "record_api_ontada_record_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/ontada/everything": {
+            "get": {
+                "tags": [
+                    "ontada"
+                ],
+                "summary": "Patient Everything",
+                "description": "The authorised patient's entire chart via Patient/$everything.",
+                "operationId": "patient_everything_api_ontada_everything_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/ontada/import": {
+            "post": {
+                "tags": [
+                    "ontada"
+                ],
+                "summary": "Import Patient",
+                "description": "Pull the authorised patient's chart and create a casebook from it.\n\nOne call: $everything -> map -> casebook (+ a pre-auth package when the\nbundle carried a usable Coverage). Fields the bundle does not fill are\nreturned in `unmapped` so the UI can show them as gaps rather than letting\na blank pass for a value.",
+                "operationId": "import_patient_api_ontada_import_post",
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OntadaImport"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/ontada/resource/{resource_type}": {
+            "get": {
+                "tags": [
+                    "ontada"
+                ],
+                "summary": "Resource",
+                "operationId": "resource_api_ontada_resource__resource_type__get",
+                "parameters": [
+                    {
+                        "name": "resource_type",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Resource Type"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cancer-centers": {
+            "get": {
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List Centers",
+                "operationId": "list_centers_api_admin_cancer_centers_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancerCenterList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create Center",
+                "operationId": "create_center_api_admin_cancer_centers_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CancerCenterIn"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancerCenterOut"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/hospitals": {
+            "get": {
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List Hospitals",
+                "operationId": "list_hospitals_api_admin_hospitals_get",
+                "parameters": [
+                    {
+                        "name": "cancer_center_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Cancer Center Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HospitalList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create Hospital",
+                "operationId": "create_hospital_api_admin_hospitals_post",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HospitalIn"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HospitalOut"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/casebooks": {
+            "get": {
+                "tags": [
+                    "casebooks"
+                ],
+                "summary": "List Casebooks",
+                "operationId": "list_casebooks_api_casebooks_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CasebookList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "casebooks"
+                ],
+                "summary": "Create Casebook",
+                "operationId": "create_casebook_api_casebooks_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CasebookIn"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CasebookOut"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/casebooks/{casebook_id}": {
+            "get": {
+                "tags": [
+                    "casebooks"
+                ],
+                "summary": "Get Casebook",
+                "operationId": "get_casebook_api_casebooks__casebook_id__get",
+                "parameters": [
+                    {
+                        "name": "casebook_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Casebook Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CasebookOut"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/casebooks/{casebook_id}/packages": {
+            "get": {
+                "tags": [
+                    "casebooks"
+                ],
+                "summary": "Casebook Packages",
+                "description": "Pre-auth packages belonging to this patient, newest first.",
+                "operationId": "casebook_packages_api_casebooks__casebook_id__packages_get",
+                "parameters": [
+                    {
+                        "name": "casebook_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Casebook Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CasebookPackageList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/casebooks/{casebook_id}/discover-coverage": {
+            "post": {
+                "tags": [
+                    "casebooks"
+                ],
+                "summary": "Discover Coverage",
+                "description": "Find every policy this patient is covered under.\n\nAnswers a question the chart usually cannot: is the payer we are about to\nbill actually the primary, and is the patient a dependent on a plan nobody\nrecorded? Getting that order wrong is a denial.",
+                "operationId": "discover_coverage_api_casebooks__casebook_id__discover_coverage_post",
+                "parameters": [
+                    {
+                        "name": "casebook_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Casebook Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CoverageDiscovery"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/preauth": {
+            "get": {
+                "tags": [
+                    "preauth"
+                ],
+                "summary": "List Packages",
+                "operationId": "list_packages_api_preauth_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PackageList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "preauth"
+                ],
+                "summary": "Create Package",
+                "operationId": "create_package_api_preauth_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PackageIn"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PackageOut"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/preauth/{package_id}": {
+            "get": {
+                "tags": [
+                    "preauth"
+                ],
+                "summary": "Get Package",
+                "operationId": "get_package_api_preauth__package_id__get",
+                "parameters": [
+                    {
+                        "name": "package_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Package Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PackageOut"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/preauth/{package_id}/lines": {
+            "post": {
+                "tags": [
+                    "preauth"
+                ],
+                "summary": "Set Lines",
+                "description": "Replace the billable lines \u2014 this is how a drug tier gets assigned.",
+                "operationId": "set_lines_api_preauth__package_id__lines_post",
+                "parameters": [
+                    {
+                        "name": "package_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Package Id"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LinesIn"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PackageOut"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/preauth/{package_id}/benefits": {
+            "get": {
+                "tags": [
+                    "preauth"
+                ],
+                "summary": "Package Benefits",
+                "description": "Parsed benefits from the 271 already stored on this package.",
+                "operationId": "package_benefits_api_preauth__package_id__benefits_get",
+                "parameters": [
+                    {
+                        "name": "package_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Package Id"
+                        }
+                    },
+                    {
+                        "name": "network",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "in",
+                            "title": "Network"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BenefitsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/preauth/{package_id}/coverage": {
+            "post": {
+                "tags": [
+                    "preauth"
+                ],
+                "summary": "Run Coverage",
+                "description": "Run a real 270 for this package and price its lines off the 271.",
+                "operationId": "run_coverage_api_preauth__package_id__coverage_post",
+                "parameters": [
+                    {
+                        "name": "package_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Package Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CoverageRunResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "428": {
+                        "description": "A precondition is unmet \u2014 typically Ontada is not connected",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "Deliberately not implemented; the reason is in the message",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "An upstream (Stedi, Ontada) failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "A capability is not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/preauth/{package_id}/submit": {
+            "post": {
+                "tags": [
+                    "preauth"
+                ],
+                "summary": "Submit",
+                "description": "Deliberately unimplemented.\n\nSubmitting a prior authorisation is an X12 278 transaction. Stedi exposes\nno 278 endpoint \u2014 verified against both the test and the production key,\nevery candidate path returns 404. Returning a fabricated authorisation\nnumber here would be the single most damaging thing this service could do,\nso it refuses instead.",
+                "operationId": "submit_api_preauth__package_id__submit_post",
+                "parameters": [
+                    {
+                        "name": "package_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Package Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "501": {
+                        "description": "Always. There is no X12 278 channel.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Accumulator": {
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "out_of_pocket",
+                            "deductible"
+                        ],
+                        "title": "Kind"
+                    },
+                    "level": {
+                        "type": "string",
+                        "title": "Level",
+                        "description": "individual | family"
+                    },
+                    "network": {
+                        "type": "string",
+                        "enum": [
+                            "in",
+                            "out",
+                            "na"
+                        ],
+                        "title": "Network"
+                    },
+                    "basis": {
+                        "type": "string",
+                        "title": "Basis",
+                        "description": "service year | year to date | remaining"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "title": "Amount"
+                    },
+                    "service_types": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Service Types"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "kind",
+                    "level",
+                    "network",
+                    "basis",
+                    "amount",
+                    "service_types"
+                ],
+                "title": "Accumulator"
+            },
+            "BenefitsResponse": {
+                "properties": {
+                    "benefits": {
+                        "$ref": "#/components/schemas/ParsedBenefits"
+                    },
+                    "estimate": {
+                        "$ref": "#/components/schemas/Estimate"
+                    },
+                    "source": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Source"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "benefits",
+                    "estimate",
+                    "source"
+                ],
+                "title": "BenefitsResponse"
+            },
+            "CancerCenterIn": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "title": "Name"
+                    },
+                    "city": {
+                        "type": "string",
+                        "title": "City",
+                        "default": ""
+                    },
+                    "state": {
+                        "type": "string",
+                        "title": "State",
+                        "default": ""
+                    },
+                    "organization_id": {
+                        "type": "string",
+                        "title": "Organization Id",
+                        "default": ""
+                    },
+                    "ehr_vendor": {
+                        "type": "string",
+                        "title": "Ehr Vendor",
+                        "default": "none"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status",
+                        "default": "active"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "title": "CancerCenterIn"
+            },
+            "CancerCenterList": {
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "title": "Count"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/CancerCenterOut"
+                        },
+                        "type": "array",
+                        "title": "Results"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "title": "CancerCenterList"
+            },
+            "CancerCenterOut": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "city": {
+                        "type": "string",
+                        "title": "City"
+                    },
+                    "state": {
+                        "type": "string",
+                        "title": "State"
+                    },
+                    "organizationId": {
+                        "type": "string",
+                        "title": "Organizationid"
+                    },
+                    "ehrVendor": {
+                        "type": "string",
+                        "title": "Ehrvendor"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "title": "Createdat"
+                    },
+                    "hospitalIds": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Hospitalids"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "city",
+                    "state",
+                    "organizationId",
+                    "ehrVendor",
+                    "status",
+                    "createdAt",
+                    "hospitalIds"
+                ],
+                "title": "CancerCenterOut"
+            },
+            "Capabilities": {
+                "properties": {
+                    "stedi": {
+                        "$ref": "#/components/schemas/StediCapabilities"
+                    },
+                    "ontada": {
+                        "$ref": "#/components/schemas/OntadaCapabilities"
+                    },
+                    "cancerai_digital_twin": {
+                        "$ref": "#/components/schemas/CapabilityFlag"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "stedi",
+                    "ontada",
+                    "cancerai_digital_twin"
+                ],
+                "title": "Capabilities",
+                "description": "What this deployment can genuinely do. The UI reads it to disable\ncontrols rather than let them fail when pressed."
+            },
+            "CapabilityFlag": {
+                "properties": {
+                    "available": {
+                        "type": "boolean",
+                        "title": "Available"
+                    },
+                    "real": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Real"
+                    },
+                    "reason": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Reason"
+                    },
+                    "note": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Note"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "available"
+                ],
+                "title": "CapabilityFlag"
+            },
+            "CasebookIn": {
+                "properties": {
+                    "patient_name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "title": "Patient Name"
+                    },
+                    "mrn": {
+                        "type": "string",
+                        "title": "Mrn",
+                        "default": ""
+                    },
+                    "birth_date": {
+                        "type": "string",
+                        "title": "Birth Date",
+                        "default": ""
+                    },
+                    "gender": {
+                        "type": "string",
+                        "title": "Gender",
+                        "default": ""
+                    },
+                    "primary_diagnosis": {
+                        "type": "string",
+                        "title": "Primary Diagnosis",
+                        "default": ""
+                    },
+                    "diagnosis_code": {
+                        "type": "string",
+                        "title": "Diagnosis Code",
+                        "default": ""
+                    },
+                    "stage": {
+                        "type": "string",
+                        "title": "Stage",
+                        "default": ""
+                    },
+                    "cancer_center_id": {
+                        "type": "string",
+                        "title": "Cancer Center Id",
+                        "default": ""
+                    },
+                    "hospital_id": {
+                        "type": "string",
+                        "title": "Hospital Id",
+                        "default": ""
+                    },
+                    "oncologist": {
+                        "type": "string",
+                        "title": "Oncologist",
+                        "default": ""
+                    },
+                    "ontada_fhir_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Ontada Fhir Id"
+                    },
+                    "fhir_snapshot": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Fhir Snapshot"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "patient_name"
+                ],
+                "title": "CasebookIn"
+            },
+            "CasebookList": {
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "title": "Count"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/CasebookOut"
+                        },
+                        "type": "array",
+                        "title": "Results"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "title": "CasebookList"
+            },
+            "CasebookOut": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "patientName": {
+                        "type": "string",
+                        "title": "Patientname"
+                    },
+                    "mrn": {
+                        "type": "string",
+                        "title": "Mrn"
+                    },
+                    "birthDate": {
+                        "type": "string",
+                        "title": "Birthdate"
+                    },
+                    "gender": {
+                        "type": "string",
+                        "title": "Gender"
+                    },
+                    "primaryDiagnosis": {
+                        "type": "string",
+                        "title": "Primarydiagnosis"
+                    },
+                    "diagnosisCode": {
+                        "type": "string",
+                        "title": "Diagnosiscode"
+                    },
+                    "stage": {
+                        "type": "string",
+                        "title": "Stage"
+                    },
+                    "cancerCenterId": {
+                        "type": "string",
+                        "title": "Cancercenterid"
+                    },
+                    "hospitalId": {
+                        "type": "string",
+                        "title": "Hospitalid"
+                    },
+                    "oncologist": {
+                        "type": "string",
+                        "title": "Oncologist"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "ontadaFhirId": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Ontadafhirid"
+                    },
+                    "resourceCounts": {
+                        "additionalProperties": {
+                            "type": "integer"
+                        },
+                        "type": "object",
+                        "title": "Resourcecounts"
+                    },
+                    "cancerAiConfidence": {
+                        "anyOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Canceraiconfidence",
+                        "description": "Always null \u2014 gSage is not wired to this module"
+                    },
+                    "dtEfficacyScore": {
+                        "anyOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Dtefficacyscore",
+                        "description": "Always null \u2014 gSage is not wired to this module"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "title": "Createdat"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "title": "Updatedat"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "patientName",
+                    "mrn",
+                    "birthDate",
+                    "gender",
+                    "primaryDiagnosis",
+                    "diagnosisCode",
+                    "stage",
+                    "cancerCenterId",
+                    "hospitalId",
+                    "oncologist",
+                    "status",
+                    "ontadaFhirId",
+                    "resourceCounts",
+                    "createdAt",
+                    "updatedAt"
+                ],
+                "title": "CasebookOut"
+            },
+            "CasebookPackageList": {
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "title": "Count"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/CasebookPackageRow"
+                        },
+                        "type": "array",
+                        "title": "Results"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "title": "CasebookPackageList"
+            },
+            "CasebookPackageRow": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "payer": {
+                        "type": "string",
+                        "title": "Payer"
+                    },
+                    "memberId": {
+                        "type": "string",
+                        "title": "Memberid"
+                    },
+                    "regimen": {
+                        "type": "string",
+                        "title": "Regimen"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "lines": {
+                        "type": "integer",
+                        "title": "Lines"
+                    },
+                    "hasEligibility": {
+                        "type": "boolean",
+                        "title": "Haseligibility"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "title": "Createdat"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "payer",
+                    "memberId",
+                    "regimen",
+                    "status",
+                    "lines",
+                    "hasEligibility",
+                    "createdAt"
+                ],
+                "title": "CasebookPackageRow"
+            },
+            "CoverageDiscovery": {
+                "properties": {
+                    "available": {
+                        "type": "boolean",
+                        "title": "Available"
+                    },
+                    "reason": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Reason"
+                    },
+                    "found": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Found"
+                    },
+                    "distinct_policies": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Distinct Policies"
+                    },
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/DiscoveredCoverage"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "warnings": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Warnings"
+                    },
+                    "discovery_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Discovery Id"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "available",
+                    "items"
+                ],
+                "title": "CoverageDiscovery"
+            },
+            "CoverageRunResponse": {
+                "properties": {
+                    "package": {
+                        "$ref": "#/components/schemas/PackageOut"
+                    },
+                    "benefits": {
+                        "$ref": "#/components/schemas/ParsedBenefits"
+                    },
+                    "estimate": {
+                        "$ref": "#/components/schemas/Estimate"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "title": "Mode"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "package",
+                    "benefits",
+                    "estimate",
+                    "mode"
+                ],
+                "title": "CoverageRunResponse"
+            },
+            "DiscoveredCoverage": {
+                "properties": {
+                    "payer_name": {
+                        "type": "string",
+                        "title": "Payer Name"
+                    },
+                    "payer_id": {
+                        "type": "string",
+                        "title": "Payer Id"
+                    },
+                    "member_id": {
+                        "type": "string",
+                        "title": "Member Id"
+                    },
+                    "group_number": {
+                        "type": "string",
+                        "title": "Group Number"
+                    },
+                    "subscriber_name": {
+                        "type": "string",
+                        "title": "Subscriber Name"
+                    },
+                    "patient_is_dependent": {
+                        "type": "boolean",
+                        "title": "Patient Is Dependent",
+                        "description": "True when the patient is covered under somebody else's policy"
+                    },
+                    "dependent_name": {
+                        "type": "string",
+                        "title": "Dependent Name"
+                    },
+                    "on_file": {
+                        "type": "boolean",
+                        "title": "On File",
+                        "description": "False means no package is billing this policy"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "payer_name",
+                    "payer_id",
+                    "member_id",
+                    "group_number",
+                    "subscriber_name",
+                    "patient_is_dependent",
+                    "dependent_name",
+                    "on_file"
+                ],
+                "title": "DiscoveredCoverage"
+            },
+            "DrugTier": {
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "provider_administered",
+                            "specialty",
+                            "pharmacy"
+                        ],
+                        "title": "Kind"
+                    },
+                    "tier": {
+                        "type": "integer",
+                        "title": "Tier"
+                    },
+                    "label": {
+                        "type": "string",
+                        "title": "Label",
+                        "description": "Payer's own wording, e.g. 'PROVIDER ADMINISTERED DRUG TIER 9'"
+                    },
+                    "in_network": {
+                        "anyOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "In Network"
+                    },
+                    "out_of_network": {
+                        "anyOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Out Of Network"
+                    },
+                    "varies_by_location": {
+                        "type": "boolean",
+                        "title": "Varies By Location"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "kind",
+                    "tier",
+                    "label",
+                    "in_network",
+                    "out_of_network",
+                    "varies_by_location"
+                ],
+                "title": "DrugTier"
+            },
+            "EligibilityRun": {
+                "properties": {
+                    "source": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Source",
+                        "description": "{\"kind\":\"live\"|\"replay\", \u2026}"
+                    },
+                    "benefits": {
+                        "$ref": "#/components/schemas/ParsedBenefits"
+                    },
+                    "estimate": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Estimate"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "source",
+                    "benefits"
+                ],
+                "title": "EligibilityRun"
+            },
+            "ErrorBody": {
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "title": "Code",
+                        "description": "Machine-readable: unconfigured, upstream_error, ontada_not_connected, form_invalid, not_implemented \u2026"
+                    },
+                    "message": {
+                        "type": "string",
+                        "title": "Message",
+                        "description": "Human-readable. Upstream messages are kept verbatim."
+                    },
+                    "detail": {
+                        "anyOf": [
+                            {},
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "code",
+                    "message"
+                ],
+                "title": "ErrorBody"
+            },
+            "ErrorEnvelope": {
+                "properties": {
+                    "error": {
+                        "$ref": "#/components/schemas/ErrorBody"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "error"
+                ],
+                "title": "ErrorEnvelope",
+                "description": "Every non-2xx response from this API has exactly this shape."
+            },
+            "Estimate": {
+                "properties": {
+                    "lines": {
+                        "items": {
+                            "$ref": "#/components/schemas/PreAuthLineOut"
+                        },
+                        "type": "array",
+                        "title": "Lines"
+                    },
+                    "network": {
+                        "type": "string",
+                        "title": "Network"
+                    },
+                    "oop_remaining": {
+                        "anyOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Oop Remaining",
+                        "description": "Caps the running total. A real figure from the payer."
+                    },
+                    "totals": {
+                        "$ref": "#/components/schemas/EstimateTotals"
+                    },
+                    "disclaimer": {
+                        "type": "string",
+                        "title": "Disclaimer"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "lines",
+                    "network",
+                    "totals",
+                    "disclaimer"
+                ],
+                "title": "Estimate"
+            },
+            "EstimateTotals": {
+                "properties": {
+                    "billed_cents": {
+                        "type": "integer",
+                        "title": "Billed Cents"
+                    },
+                    "patient_estimate_cents": {
+                        "type": "integer",
+                        "title": "Patient Estimate Cents"
+                    },
+                    "lines_estimated": {
+                        "type": "integer",
+                        "title": "Lines Estimated"
+                    },
+                    "lines_unknown": {
+                        "type": "integer",
+                        "title": "Lines Unknown"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "billed_cents",
+                    "patient_estimate_cents",
+                    "lines_estimated",
+                    "lines_unknown"
+                ],
+                "title": "EstimateTotals"
+            },
+            "FormField": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "label": {
+                        "type": "string",
+                        "title": "Label"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "text",
+                            "select",
+                            "date",
+                            "checkbox",
+                            "tel",
+                            "number"
+                        ],
+                        "title": "Type"
+                    },
+                    "required": {
+                        "type": "boolean",
+                        "title": "Required",
+                        "default": false
+                    },
+                    "value": {
+                        "anyOf": [
+                            {},
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Value"
+                    },
+                    "options": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "additionalProperties": true,
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Options"
+                    },
+                    "help": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Help"
+                    },
+                    "pattern": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Pattern"
+                    },
+                    "maxLength": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Maxlength"
+                    },
+                    "visible_when": {
+                        "anyOf": [
+                            {
+                                "additionalProperties": true,
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Visible When",
+                        "description": "Show only when these values hold"
+                    },
+                    "sensitive": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Sensitive"
+                    },
+                    "x12": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "X12",
+                        "description": "The X12 element this field maps onto \u2014 the contract between the form and the 270 it produces"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "label",
+                    "type"
+                ],
+                "title": "FormField"
+            },
+            "FormSection": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "title": {
+                        "type": "string",
+                        "title": "Title"
+                    },
+                    "fields": {
+                        "items": {
+                            "$ref": "#/components/schemas/FormField"
+                        },
+                        "type": "array",
+                        "title": "Fields"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "title",
+                    "fields"
+                ],
+                "title": "FormSection"
+            },
+            "HTTPValidationError": {
+                "properties": {
+                    "detail": {
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "type": "array",
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "title": "HTTPValidationError"
+            },
+            "Health": {
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "env": {
+                        "type": "string",
+                        "title": "Env"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "status",
+                    "env"
+                ],
+                "title": "Health"
+            },
+            "HospitalIn": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "title": "Name"
+                    },
+                    "cancer_center_id": {
+                        "type": "string",
+                        "title": "Cancer Center Id"
+                    },
+                    "city": {
+                        "type": "string",
+                        "title": "City",
+                        "default": ""
+                    },
+                    "state": {
+                        "type": "string",
+                        "title": "State",
+                        "default": ""
+                    },
+                    "npi": {
+                        "type": "string",
+                        "title": "Npi",
+                        "default": ""
+                    },
+                    "beds": {
+                        "type": "integer",
+                        "title": "Beds",
+                        "default": 0
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Type",
+                        "default": "hospital"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status",
+                        "default": "active"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name",
+                    "cancer_center_id"
+                ],
+                "title": "HospitalIn"
+            },
+            "HospitalList": {
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "title": "Count"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/HospitalOut"
+                        },
+                        "type": "array",
+                        "title": "Results"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "title": "HospitalList"
+            },
+            "HospitalOut": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "cancerCenterId": {
+                        "type": "string",
+                        "title": "Cancercenterid"
+                    },
+                    "city": {
+                        "type": "string",
+                        "title": "City"
+                    },
+                    "state": {
+                        "type": "string",
+                        "title": "State"
+                    },
+                    "npi": {
+                        "type": "string",
+                        "title": "Npi"
+                    },
+                    "beds": {
+                        "type": "integer",
+                        "title": "Beds"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Type"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "cancerCenterId",
+                    "city",
+                    "state",
+                    "npi",
+                    "beds",
+                    "type",
+                    "status"
+                ],
+                "title": "HospitalOut"
+            },
+            "LinesIn": {
+                "properties": {
+                    "lines": {
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "type": "array",
+                        "title": "Lines"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "lines"
+                ],
+                "title": "LinesIn"
+            },
+            "OntadaAuthorize": {
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "title": "Url",
+                        "description": "Open in a real browser \u2014 the endpoint is behind a WAF"
+                    },
+                    "state": {
+                        "type": "string",
+                        "title": "State"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "url",
+                    "state"
+                ],
+                "title": "OntadaAuthorize"
+            },
+            "OntadaCapabilities": {
+                "properties": {
+                    "configured": {
+                        "type": "boolean",
+                        "title": "Configured"
+                    },
+                    "fhir_base": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Fhir Base"
+                    },
+                    "client_auth": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Client Auth"
+                    },
+                    "grant_types": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Grant Types"
+                    },
+                    "service_to_service": {
+                        "$ref": "#/components/schemas/CapabilityFlag"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "configured",
+                    "fhir_base",
+                    "client_auth",
+                    "grant_types",
+                    "service_to_service"
+                ],
+                "title": "OntadaCapabilities"
+            },
+            "OntadaImport": {
+                "properties": {
+                    "casebook_id": {
+                        "type": "string",
+                        "title": "Casebook Id"
+                    },
+                    "created": {
+                        "type": "boolean",
+                        "title": "Created"
+                    },
+                    "package_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Package Id"
+                    },
+                    "counts": {
+                        "additionalProperties": {
+                            "type": "integer"
+                        },
+                        "type": "object",
+                        "title": "Counts"
+                    },
+                    "coverage": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Coverage"
+                    },
+                    "unmapped": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Unmapped",
+                        "description": "Target fields the bundle could not fill"
+                    },
+                    "withheld_note": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Withheld Note"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "casebook_id",
+                    "created",
+                    "package_id",
+                    "counts",
+                    "coverage",
+                    "unmapped"
+                ],
+                "title": "OntadaImport"
+            },
+            "OntadaStatus": {
+                "properties": {
+                    "configured": {
+                        "type": "boolean",
+                        "title": "Configured"
+                    },
+                    "connected": {
+                        "type": "boolean",
+                        "title": "Connected"
+                    },
+                    "fhir_base": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Fhir Base"
+                    },
+                    "grant_types": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Grant Types"
+                    },
+                    "launch_context": {
+                        "type": "string",
+                        "title": "Launch Context"
+                    },
+                    "panel_search_supported": {
+                        "type": "boolean",
+                        "title": "Panel Search Supported"
+                    },
+                    "panel_search_reason": {
+                        "type": "string",
+                        "title": "Panel Search Reason"
+                    },
+                    "reason": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Reason"
+                    },
+                    "expired": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Expired"
+                    },
+                    "can_refresh": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Can Refresh"
+                    },
+                    "expires_at": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Expires At"
+                    },
+                    "scope": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Scope"
+                    },
+                    "patient_context": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Patient Context"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "configured",
+                    "connected",
+                    "fhir_base",
+                    "grant_types",
+                    "launch_context",
+                    "panel_search_supported",
+                    "panel_search_reason"
+                ],
+                "title": "OntadaStatus"
+            },
+            "PackageIn": {
+                "properties": {
+                    "casebook_id": {
+                        "type": "string",
+                        "title": "Casebook Id"
+                    },
+                    "regimen": {
+                        "type": "string",
+                        "title": "Regimen",
+                        "default": ""
+                    },
+                    "payer_name": {
+                        "type": "string",
+                        "title": "Payer Name",
+                        "default": ""
+                    },
+                    "member_id": {
+                        "type": "string",
+                        "title": "Member Id",
+                        "default": ""
+                    },
+                    "group_number": {
+                        "type": "string",
+                        "title": "Group Number",
+                        "default": ""
+                    },
+                    "hospital_id": {
+                        "type": "string",
+                        "title": "Hospital Id",
+                        "default": ""
+                    },
+                    "lines": {
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "type": "array",
+                        "title": "Lines"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "casebook_id"
+                ],
+                "title": "PackageIn"
+            },
+            "PackageList": {
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "title": "Count"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/PackageOut"
+                        },
+                        "type": "array",
+                        "title": "Results"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "title": "PackageList"
+            },
+            "PackageOut": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "casebookId": {
+                        "type": "string",
+                        "title": "Casebookid"
+                    },
+                    "patientName": {
+                        "type": "string",
+                        "title": "Patientname"
+                    },
+                    "mrn": {
+                        "type": "string",
+                        "title": "Mrn"
+                    },
+                    "regimen": {
+                        "type": "string",
+                        "title": "Regimen"
+                    },
+                    "payer": {
+                        "type": "string",
+                        "title": "Payer"
+                    },
+                    "payerId": {
+                        "type": "string",
+                        "title": "Payerid"
+                    },
+                    "memberId": {
+                        "type": "string",
+                        "title": "Memberid"
+                    },
+                    "groupNumber": {
+                        "type": "string",
+                        "title": "Groupnumber"
+                    },
+                    "hospitalId": {
+                        "type": "string",
+                        "title": "Hospitalid"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "lines": {
+                        "items": {
+                            "$ref": "#/components/schemas/PreAuthLineOut"
+                        },
+                        "type": "array",
+                        "title": "Lines"
+                    },
+                    "evidence": {
+                        "items": {},
+                        "type": "array",
+                        "title": "Evidence"
+                    },
+                    "events": {
+                        "items": {
+                            "$ref": "#/components/schemas/PreAuthEventOut"
+                        },
+                        "type": "array",
+                        "title": "Events"
+                    },
+                    "eligibility": {
+                        "anyOf": [
+                            {
+                                "additionalProperties": true,
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Eligibility",
+                        "description": "Carries the raw 271 under `raw_271`"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "title": "Createdat"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "title": "Updatedat"
+                    },
+                    "submittedAt": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Submittedat"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "casebookId",
+                    "patientName",
+                    "mrn",
+                    "regimen",
+                    "payer",
+                    "payerId",
+                    "memberId",
+                    "groupNumber",
+                    "hospitalId",
+                    "status",
+                    "lines",
+                    "evidence",
+                    "events",
+                    "createdAt",
+                    "updatedAt",
+                    "submittedAt"
+                ],
+                "title": "PackageOut"
+            },
+            "ParsedBenefits": {
+                "properties": {
+                    "active": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Active"
+                    },
+                    "payer": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Payer"
+                    },
+                    "plan": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Plan"
+                    },
+                    "member": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Member"
+                    },
+                    "accumulators": {
+                        "items": {
+                            "$ref": "#/components/schemas/Accumulator"
+                        },
+                        "type": "array",
+                        "title": "Accumulators"
+                    },
+                    "drug_tiers": {
+                        "items": {
+                            "$ref": "#/components/schemas/DrugTier"
+                        },
+                        "type": "array",
+                        "title": "Drug Tiers"
+                    },
+                    "coinsurance": {
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "type": "array",
+                        "title": "Coinsurance"
+                    },
+                    "limitations": {
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "type": "array",
+                        "title": "Limitations"
+                    },
+                    "referrals": {
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "type": "array",
+                        "title": "Referrals"
+                    },
+                    "errors": {
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "type": "array",
+                        "title": "Errors",
+                        "description": "The payer's own AAA rejections, verbatim"
+                    },
+                    "trace_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Trace Id"
+                    },
+                    "mode": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Mode"
+                    },
+                    "entry_count": {
+                        "type": "integer",
+                        "title": "Entry Count"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "active",
+                    "payer",
+                    "plan",
+                    "member",
+                    "accumulators",
+                    "drug_tiers",
+                    "coinsurance",
+                    "limitations",
+                    "referrals",
+                    "errors",
+                    "trace_id",
+                    "mode",
+                    "entry_count"
+                ],
+                "title": "ParsedBenefits",
+                "description": "A real 271 reduced to what a pre-auth screen needs.\n\nA commercial plan can carry 700+ benefit lines with no coinsurance and no\ndeductible at all \u2014 oncology is priced by drug tier. Hence `drug_tiers`."
+            },
+            "PayerRow": {
+                "properties": {
+                    "stedi_id": {
+                        "type": "string",
+                        "title": "Stedi Id"
+                    },
+                    "payer_id": {
+                        "type": "string",
+                        "title": "Payer Id"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "aliases": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Aliases",
+                        "default": []
+                    },
+                    "eligibility_support": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Eligibility Support"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "stedi_id",
+                    "payer_id",
+                    "name"
+                ],
+                "title": "PayerRow"
+            },
+            "PayerSearch": {
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "title": "Query"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "title": "Count"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/PayerRow"
+                        },
+                        "type": "array",
+                        "title": "Results"
+                    },
+                    "source": {
+                        "type": "string",
+                        "title": "Source"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "query",
+                    "count",
+                    "results",
+                    "source"
+                ],
+                "title": "PayerSearch"
+            },
+            "PolicyForm": {
+                "properties": {
+                    "form_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Form Id"
+                    },
+                    "form_version": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Form Version"
+                    },
+                    "family": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Family",
+                        "description": "{id, label, why} \u2014 which plan-family rules apply"
+                    },
+                    "payer": {
+                        "anyOf": [
+                            {
+                                "additionalProperties": true,
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Payer"
+                    },
+                    "sections": {
+                        "items": {
+                            "$ref": "#/components/schemas/FormSection"
+                        },
+                        "type": "array",
+                        "title": "Sections"
+                    },
+                    "prefill": {
+                        "anyOf": [
+                            {
+                                "additionalProperties": true,
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Prefill",
+                        "description": "Values already known, and where each came from, so a prefilled field is never mistaken for one the clinician typed"
+                    },
+                    "consent_text": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Consent Text",
+                        "description": "Attestation the user must accept before a real payer call is made on this patient"
+                    },
+                    "sources": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "additionalProperties": true,
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Sources",
+                        "description": "Citations for the payer-specific rules this form enforces (CMS, X12, BlueCard \u2026)"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "family",
+                    "sections"
+                ],
+                "title": "PolicyForm",
+                "description": "Field schema for one payer.\n\nA Medicare MBI, a BlueCard alpha prefix, a TRICARE sponsor SSN and a\ncommercial member ID are not interchangeable. `family` says which set of\nrules applies and `why` says how it was decided."
+            },
+            "PreAuthEventOut": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "at": {
+                        "type": "string",
+                        "title": "At"
+                    },
+                    "actor": {
+                        "type": "string",
+                        "title": "Actor"
+                    },
+                    "action": {
+                        "type": "string",
+                        "title": "Action"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "info",
+                            "success",
+                            "warning",
+                            "error"
+                        ],
+                        "title": "Kind"
+                    },
+                    "detail": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "at",
+                    "actor",
+                    "action",
+                    "kind"
+                ],
+                "title": "PreAuthEventOut"
+            },
+            "PreAuthLineOut": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "description": {
+                        "type": "string",
+                        "title": "Description"
+                    },
+                    "code": {
+                        "type": "string",
+                        "title": "Code",
+                        "default": ""
+                    },
+                    "category": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Category"
+                    },
+                    "units": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Units"
+                    },
+                    "billed_cents": {
+                        "type": "integer",
+                        "title": "Billed Cents"
+                    },
+                    "drug_tier": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Drug Tier",
+                        "description": "Formulary tier. The 271 prices by tier but never states which tier a HCPCS code is in."
+                    },
+                    "tier_kind": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Tier Kind"
+                    },
+                    "patient_estimate_cents": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Patient Estimate Cents",
+                        "description": "null means the line could not be priced"
+                    },
+                    "estimate_basis": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Estimate Basis"
+                    },
+                    "capped_by_oop": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Capped By Oop"
+                    },
+                    "estimated": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Estimated"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "description",
+                    "billed_cents"
+                ],
+                "title": "PreAuthLineOut"
+            },
+            "ReplayList": {
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "title": "Count"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/ReplayRow"
+                        },
+                        "type": "array",
+                        "title": "Results"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "title": "ReplayList"
+            },
+            "ReplayRow": {
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "title": "File"
+                    },
+                    "payer": {
+                        "type": "string",
+                        "title": "Payer"
+                    },
+                    "member_id": {
+                        "type": "string",
+                        "title": "Member Id"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "plan": {
+                        "type": "string",
+                        "title": "Plan"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "title": "Mode"
+                    },
+                    "entries": {
+                        "type": "integer",
+                        "title": "Entries"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "file",
+                    "payer",
+                    "member_id",
+                    "name",
+                    "plan",
+                    "mode",
+                    "entries"
+                ],
+                "title": "ReplayRow"
+            },
+            "RunRequest": {
+                "properties": {
+                    "insurer": {
+                        "type": "string",
+                        "title": "Insurer",
+                        "default": ""
+                    },
+                    "payer_id": {
+                        "type": "string",
+                        "title": "Payer Id",
+                        "default": ""
+                    },
+                    "plan_type": {
+                        "type": "string",
+                        "title": "Plan Type",
+                        "default": ""
+                    },
+                    "values": {
+                        "additionalProperties": true,
+                        "type": "object",
+                        "title": "Values"
+                    },
+                    "service_type_codes": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Service Type Codes"
+                    },
+                    "lines": {
+                        "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        },
+                        "type": "array",
+                        "title": "Lines"
+                    },
+                    "network": {
+                        "type": "string",
+                        "title": "Network",
+                        "default": "in"
+                    },
+                    "replay": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Replay"
+                    }
+                },
+                "type": "object",
+                "title": "RunRequest"
+            },
+            "StediCapabilities": {
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "test",
+                            "production",
+                            "unconfigured"
+                        ],
+                        "title": "Mode"
+                    },
+                    "payer_search": {
+                        "$ref": "#/components/schemas/CapabilityFlag"
+                    },
+                    "eligibility_270_271": {
+                        "$ref": "#/components/schemas/CapabilityFlag"
+                    },
+                    "claim_status_276_277": {
+                        "$ref": "#/components/schemas/CapabilityFlag"
+                    },
+                    "insurance_discovery": {
+                        "$ref": "#/components/schemas/CapabilityFlag"
+                    },
+                    "prior_auth_278": {
+                        "$ref": "#/components/schemas/CapabilityFlag"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "mode",
+                    "payer_search",
+                    "eligibility_270_271",
+                    "claim_status_276_277",
+                    "insurance_discovery",
+                    "prior_auth_278"
+                ],
+                "title": "StediCapabilities"
+            },
+            "ValidationError": {
+                "properties": {
+                    "loc": {
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    },
+                    "input": {
+                        "title": "Input"
+                    },
+                    "ctx": {
+                        "type": "object",
+                        "title": "Context"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "loc",
+                    "msg",
+                    "type"
+                ],
+                "title": "ValidationError"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "health",
+            "description": "Liveness, and an honest report of what is wired."
+        },
+        {
+            "name": "payers",
+            "description": "The live Stedi payer network \u2014 resolve an insurer name to the trading-partner id an eligibility request needs."
+        },
+        {
+            "name": "eligibility",
+            "description": "The payer-specific intake form and the real X12 270/271. Which identifiers a payer matches on differs by plan family, and sending the wrong one earns an AAA rejection \u2014 the form schema encodes those rules."
+        },
+        {
+            "name": "ontada",
+            "description": "SMART on FHIR against Ontada / iKnowMed. Authorization-code only; the app registration is patient-scoped, so there is no panel search."
+        },
+        {
+            "name": "admin",
+            "description": "Cancer centers and hospitals \u2014 this platform's own tenant configuration, not clinical data."
+        },
+        {
+            "name": "casebooks",
+            "description": "One patient's record, plus coverage discovery for them."
+        },
+        {
+            "name": "preauth",
+            "description": "Authorisation packages: billable lines, the payer's benefit response, and the resulting cost estimate."
+        }
+    ]
+}

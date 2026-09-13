@@ -1,0 +1,85 @@
+# ============================================================================
+# genesilico-ehr
+#
+# NOTE: the git repository root is the HOME directory, not this folder. This
+# file therefore governs its own subtree only, and every path below is relative
+# to genesilico-ehr/.
+# ============================================================================
+
+# ---- Secrets. Nothing here may ever reach a remote. ------------------------
+# Bare `.env` matches at ANY depth, so this covers backend/.env too — which is
+# the file holding the Stedi production key and the Ontada client secret.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ---- Protected health information ------------------------------------------
+# backend/data/ holds the stored 271 (a real patient's name, date of birth,
+# home address and member ID), the SQLite database carrying the same once
+# seeded, and data/keys/ with the Ontada signing key. The database also stores
+# live OAuth access and refresh tokens for the EHR connection.
+backend/data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+271-*.json
+
+# Documents pulled out of the EHR — pathology PDFs, scanned operation notes,
+# imaging. `GET /api/ontada/file/{id}` writes nothing by itself, but anything
+# saved from it lands as one of these and is PHI.
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.dcm
+# Project-owned images are the exception — keep them committable.
+!public/**
+!src/**/*.svg
+!docs/**/*.png
+
+# ---- Node / Next -----------------------------------------------------------
+node_modules/
+.next/
+out/
+build/
+dist/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+.eslintcache
+
+# ---- Python ----------------------------------------------------------------
+# .venv alone is 225 MB, and __pycache__ was contributing 54 of the 141 files
+# that would otherwise have been committed.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Editors and OS --------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ---- Local scratch ---------------------------------------------------------
+*.log
+logs/
+tmp/
+scratch/
+*.bak
+*.orig

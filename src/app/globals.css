@@ -1,0 +1,265 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ================================================================
+   GENESILICO EHR — Design tokens.
+   Lifted verbatim from canceros-cancerai-merge/src/app/globals.css so
+   this module renders in the same visual language as gSage/CaseBook.
+   Keep the two in sync; do not fork the palette here.
+   ================================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap");
+
+/* ================================================================
+   Animations
+   ================================================================ */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes textShine {
+  0% { background-position: 400% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes pulse-ring {
+  0%, 100% { transform: scale(1); opacity: 0.45; }
+  50% { transform: scale(1.6); opacity: 0; }
+}
+
+/* ================================================================
+   Scrollbar styling
+   ================================================================ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; border-radius: 6px; }
+::-webkit-scrollbar-thumb { background: var(--ink-200); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-300); }
+
+.thin-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: var(--ink-200); border-radius: 2px; }
+
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ================================================================
+   Design tokens — Light mode
+   ================================================================ */
+@layer base {
+  :root {
+    /* Ink scale */
+    --ink-900: #0a1628;
+    --ink-800: #0f2540;
+    --ink-700: #1f3a5f;
+    --ink-600: #35486a;
+    --ink-500: #4a5b74;
+    --ink-400: #6b7d97;
+    --ink-300: #95a4bd;
+    --ink-200: #c6d0e0;
+    --ink-100: #e6ecf5;
+    --ink-50: #f3f6fb;
+    --canvas: #f6f8fb;
+
+    /* Brand blue (kept under the --teal-* names the design system uses) */
+    --teal-700: #002d99;
+    --teal-600: #0066cc;
+    --teal-500: #3a9fef;
+    --teal-300: #8cc4f5;
+    --teal-100: #ddeaff;
+    --teal-50: #eef4ff;
+
+    /* Brand aliases */
+    --brand: #0066cc;
+    --brand-dark: #0055cc;
+    --brand-deeper: #002d99;
+    --surface: #f5f5f7;
+    --label: #7a7a7a;
+
+    /* AI / indigo */
+    --ai-700: #4338ca;
+    --ai-600: #6366f1;
+    --ai-500: #818cf8;
+    --ai-100: #e0e7ff;
+    --ai-50: #eef2ff;
+
+    /* Semantic */
+    --green-700: #047857;
+    --green-600: #059669;
+    --green-100: #d1fae5;
+    --green-50: #ecfdf5;
+    --amber-700: #b45309;
+    --amber-600: #d97706;
+    --amber-100: #fef3c7;
+    --amber-50: #fffbeb;
+    --red-700: #b91c1c;
+    --red-600: #dc2626;
+    --red-100: #fee2e2;
+    --red-50: #fef2f2;
+
+    /* Radii */
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 22px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(15, 37, 64, 0.06);
+    --shadow: 0 6px 20px -10px rgba(15, 37, 64, 0.18), 0 2px 6px rgba(15, 37, 64, 0.06);
+    --shadow-lg: 0 30px 60px -30px rgba(15, 37, 64, 0.35), 0 18px 36px -18px rgba(15, 37, 64, 0.22);
+
+    /* Fonts */
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Helvetica Neue", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+    /* Shadcn/Radix semantic mappings */
+    --background: 255 255 255;
+    --foreground: 10 22 40;
+    --card: 255 255 255;
+    --card-foreground: 10 22 40;
+    --popover: 255 255 255;
+    --popover-foreground: 10 22 40;
+    --primary: 0 102 204;
+    --primary-foreground: 255 255 255;
+    --secondary: 243 246 251;
+    --secondary-foreground: 10 22 40;
+    --muted: 243 246 251;
+    --muted-foreground: 107 125 151;
+    --accent: 238 242 255;
+    --accent-foreground: 67 56 202;
+    --destructive: 220 38 38;
+    --destructive-foreground: 255 255 255;
+    --border: 230 236 245;
+    --input: 230 236 245;
+    --ring: 0 102 204;
+
+    --chart-1: 0 102 204;
+    --chart-2: 99 102 241;
+    --chart-3: 5 150 105;
+    --chart-4: 217 119 6;
+    --chart-5: 220 38 38;
+  }
+
+  /* ================================================================
+     Dark mode
+     ================================================================ */
+  .dark {
+    --ink-900: #e6ecf5;
+    --ink-800: #c6d0e0;
+    --ink-700: #95a4bd;
+    --ink-600: #7e8fa8;
+    --ink-500: #6b7d97;
+    --ink-400: #4a5b74;
+    --ink-300: #1f3a5f;
+    --ink-200: #0f2540;
+    --ink-100: #0d1e35;
+    --ink-50: #0b1828;
+    --canvas: #080f1c;
+
+    --teal-700: #3a9fef;
+    --teal-600: #3a9fef;
+    --teal-500: #60b3f5;
+    --teal-300: #1f3a5f;
+    --teal-100: #003380;
+    --teal-50: #001a66;
+
+    --ai-700: #818cf8;
+    --ai-600: #6366f1;
+    --ai-500: #4338ca;
+    --ai-100: #1e1b4b;
+    --ai-50: #13104b;
+
+    --green-100: #052e22;
+    --green-50: #04251c;
+    --amber-100: #3b2405;
+    --amber-50: #2c1b04;
+    --red-100: #3f1212;
+    --red-50: #2c0d0d;
+
+    --background: 8 15 28;
+    --foreground: 230 236 245;
+    --card: 13 30 53;
+    --card-foreground: 230 236 245;
+    --popover: 13 30 53;
+    --popover-foreground: 230 236 245;
+    --primary: 58 159 239;
+    --primary-foreground: 8 15 28;
+    --secondary: 15 37 64;
+    --secondary-foreground: 230 236 245;
+    --muted: 15 37 64;
+    --muted-foreground: 107 125 151;
+    --accent: 30 27 75;
+    --accent-foreground: 129 140 248;
+    --destructive: 220 38 38;
+    --destructive-foreground: 255 255 255;
+    --border: 31 58 95;
+    --input: 31 58 95;
+    --ring: 58 159 239;
+  }
+}
+
+/* ================================================================
+   Base styles
+   ================================================================ */
+@layer base {
+  * { @apply border-border; }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--ink-900);
+    background: var(--canvas);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+}
+
+/* ================================================================
+   Utility classes
+   ================================================================ */
+@layer utilities {
+  .ai-gradient-text {
+    background: linear-gradient(135deg, var(--teal-600), var(--ai-600));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .ai-gradient-bg {
+    background: linear-gradient(135deg, var(--teal-600), var(--ai-600));
+  }
+  .cb-header-gradient {
+    background: linear-gradient(135deg, var(--teal-700) 0%, var(--ai-700) 100%);
+  }
+  .gradient-text {
+    background: linear-gradient(135deg, #3a9fef 0%, #0055cc 45%, #002d99 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .shimmer-bar {
+    height: 6px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--ai-100), var(--teal-100), var(--ai-100));
+    background-size: 200% 100%;
+    animation: shimmer 1.6s infinite linear;
+  }
+  .ai-card-bg {
+    background: linear-gradient(160deg, #f5f7ff 0%, #ecfeff 100%);
+  }
+  .dark .ai-card-bg {
+    background: linear-gradient(160deg, #0f1533 0%, #0b2028 100%);
+  }
+  /* Scroll a wide table without letting the page scroll sideways. */
+  .table-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    scrollbar-width: thin;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

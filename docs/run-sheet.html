@@ -1,0 +1,337 @@
+<title>Pre-Auth Run Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --paper:#f5f7fa; --card:#ffffff; --ink:#0a1628; --ink-soft:#3d4f6b;
+    --ink-mute:#6b7d97; --rule:#dfe5ee; --rule-soft:#eef2f7;
+    --brand:#0066cc; --brand-deep:#00408a; --brand-wash:#e8f1fc;
+    --say:#134e4a; --say-wash:#e6f2f0; --say-rule:#a7cdc7;
+    --warn:#9a5b06; --warn-wash:#fdf3e3; --warn-rule:#e8c98d;
+    --stop:#a41f1f; --stop-wash:#fceeee; --stop-rule:#e8b3b3;
+    --shadow:0 1px 2px rgba(10,22,40,.05), 0 8px 24px -16px rgba(10,22,40,.25);
+    --sans:'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --serif:'Source Serif 4', Georgia, 'Times New Roman', serif;
+    --mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0b1220; --card:#111b2c; --ink:#e8eef7; --ink-soft:#b3c1d6;
+      --ink-mute:#7f92ad; --rule:#24334a; --rule-soft:#1a2536;
+      --brand:#5aa9f0; --brand-deep:#8cc6f7; --brand-wash:#132741;
+      --say:#79c9bd; --say-wash:#0f2a29; --say-rule:#2c5a55;
+      --warn:#e0aa5c; --warn-wash:#2c2110; --warn-rule:#5c4520;
+      --stop:#eb8b8b; --stop-wash:#2c1414; --stop-rule:#5c2727;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0b1220; --card:#111b2c; --ink:#e8eef7; --ink-soft:#b3c1d6;
+    --ink-mute:#7f92ad; --rule:#24334a; --rule-soft:#1a2536;
+    --brand:#5aa9f0; --brand-deep:#8cc6f7; --brand-wash:#132741;
+    --say:#79c9bd; --say-wash:#0f2a29; --say-rule:#2c5a55;
+    --warn:#e0aa5c; --warn-wash:#2c2110; --warn-rule:#5c4520;
+    --stop:#eb8b8b; --stop-wash:#2c1414; --stop-rule:#5c2727;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.5;
+    margin:0; padding-inline:20px; padding-block:40px 72px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:820px; margin-inline:auto; display:flex; flex-direction:column; gap:34px}
+
+  /* ---- masthead ---- */
+  .mast{display:flex; flex-direction:column; gap:10px}
+  .kicker{
+    font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--brand); font-family:var(--sans);
+  }
+  h1{
+    font-family:var(--sans); font-weight:700; font-size:clamp(30px,5.5vw,42px);
+    line-height:1.08; letter-spacing:-.02em; margin:0; text-wrap:balance;
+  }
+  .standfirst{
+    font-family:var(--serif); font-size:17px; line-height:1.55;
+    color:var(--ink-soft); margin:0; max-width:60ch;
+  }
+
+  /* ---- setup strip ---- */
+  .setup{
+    background:var(--card); border:1px solid var(--rule); border-radius:10px;
+    box-shadow:var(--shadow); padding:18px 20px;
+    display:flex; flex-direction:column; gap:14px;
+  }
+  .setup h2{
+    font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--ink-mute); margin:0;
+  }
+  .cmds{display:flex; flex-direction:column; gap:8px}
+  .cmd{display:flex; gap:12px; align-items:baseline; flex-wrap:wrap}
+  .cmd b{
+    font-family:var(--sans); font-size:12px; font-weight:600; color:var(--ink-mute);
+    min-width:74px; letter-spacing:.02em;
+  }
+  .cmd code{
+    font-family:var(--mono); font-size:12.5px; color:var(--ink-soft);
+    background:var(--rule-soft); padding:3px 8px; border-radius:5px;
+    overflow-wrap:anywhere;
+  }
+  .seeded{
+    font-family:var(--serif); font-size:14.5px; color:var(--ink-soft);
+    border-top:1px solid var(--rule-soft); padding-top:12px; margin:0;
+  }
+
+  /* ---- steps ---- */
+  .steps{display:flex; flex-direction:column; gap:0}
+  .step{
+    display:grid; grid-template-columns:52px 1fr; gap:0 20px;
+    padding-block:26px; border-top:1px solid var(--rule);
+  }
+  .step:first-child{border-top:2px solid var(--ink)}
+  .num{
+    font-family:var(--mono); font-size:13px; font-weight:500;
+    color:var(--brand); padding-top:3px; font-variant-numeric:tabular-nums;
+  }
+  .body{display:flex; flex-direction:column; gap:12px; min-width:0}
+  .head{display:flex; flex-direction:column; gap:4px}
+  h3{
+    font-family:var(--sans); font-size:19px; font-weight:600; letter-spacing:-.01em;
+    margin:0; text-wrap:balance;
+  }
+  .route{
+    font-family:var(--mono); font-size:12px; color:var(--ink-mute);
+    overflow-wrap:anywhere;
+  }
+  .do{
+    font-family:var(--sans); font-size:15px; font-weight:500; color:var(--ink);
+    margin:0; max-width:62ch;
+  }
+  .say{
+    font-family:var(--serif); font-size:16.5px; line-height:1.55; font-style:italic;
+    color:var(--say); background:var(--say-wash);
+    border-left:3px solid var(--say-rule); border-radius:0 7px 7px 0;
+    padding:12px 16px; margin:0; max-width:62ch;
+  }
+  .say strong{font-style:normal; font-weight:600}
+
+  /* figures to quote */
+  .figs{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:1px;
+    background:var(--rule); border:1px solid var(--rule); border-radius:8px;
+    overflow:hidden;
+  }
+  .fig{background:var(--card); padding:10px 13px; display:flex; flex-direction:column; gap:2px}
+  .fig dt{
+    font-family:var(--sans); font-size:10.5px; font-weight:600; letter-spacing:.07em;
+    text-transform:uppercase; color:var(--ink-mute);
+  }
+  .fig dd{
+    font-family:var(--mono); font-size:15px; font-weight:500; color:var(--ink);
+    margin:0; font-variant-numeric:tabular-nums;
+  }
+  .fig dd small{font-size:11.5px; color:var(--ink-mute); font-weight:400}
+
+  /* flags */
+  .flag{
+    display:flex; gap:10px; font-family:var(--sans); font-size:14px; line-height:1.5;
+    padding:11px 14px; border-radius:7px; max-width:64ch; align-items:flex-start;
+  }
+  .flag b{font-weight:700; letter-spacing:.04em; text-transform:uppercase; font-size:10.5px; padding-top:2.5px; white-space:nowrap}
+  .flag.warn{background:var(--warn-wash); color:var(--warn); border:1px solid var(--warn-rule)}
+  .flag.stop{background:var(--stop-wash); color:var(--stop); border:1px solid var(--stop-rule)}
+  .flag.note{background:var(--brand-wash); color:var(--brand-deep); border:1px solid transparent}
+
+  /* ---- Q&A ---- */
+  .qa{display:flex; flex-direction:column; gap:0; border-top:2px solid var(--ink)}
+  .qa-head{padding-block:22px 6px}
+  .qa-head h2{font-family:var(--sans); font-size:22px; font-weight:700; margin:0; letter-spacing:-.01em}
+  .qa-head p{font-family:var(--serif); color:var(--ink-soft); margin:6px 0 0; font-size:15.5px; max-width:60ch}
+  .q{padding-block:18px; border-top:1px solid var(--rule-soft); display:flex; flex-direction:column; gap:7px}
+  .q h4{
+    font-family:var(--sans); font-size:15px; font-weight:600; margin:0; color:var(--ink);
+    max-width:62ch;
+  }
+  .q p{
+    font-family:var(--serif); font-size:16px; line-height:1.55; margin:0;
+    color:var(--ink-soft); max-width:64ch;
+  }
+  .q p code, .do code, .seeded code{
+    font-family:var(--mono); font-size:.86em; background:var(--rule-soft);
+    padding:2px 5px; border-radius:4px; color:var(--ink); font-style:normal;
+  }
+
+  footer{
+    border-top:1px solid var(--rule); padding-top:16px;
+    font-family:var(--mono); font-size:11.5px; color:var(--ink-mute);
+    display:flex; flex-wrap:wrap; gap:6px 18px;
+  }
+
+  @media (max-width:560px){
+    .step{grid-template-columns:1fr; gap:8px}
+    .num{padding-top:0}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="kicker">GeneSilico EHR · Texas Oncology</div>
+    <h1>Pre-Auth Run Sheet</h1>
+    <p class="standfirst">Nine screens, about ten minutes. Sans is what you click; the serif blocks are what you say out loud. Every figure below is live — read it off the screen, not off this page, because the accumulators move.</p>
+  </header>
+
+  <section class="setup">
+    <h2>Before you start</h2>
+    <div class="cmds">
+      <div class="cmd"><b>Backend</b><code>cd backend &amp;&amp; ./.venv/bin/python -m uvicorn app.main:app --port 8090</code></div>
+      <div class="cmd"><b>Frontend</b><code>npm run dev</code> <code>http://localhost:3045/ehr</code></div>
+    </div>
+    <p class="seeded">Seeded: Texas Oncology — Austin, two facilities, and one real patient — <strong>Shaheen Farooq</strong>, whose coverage comes from a production 271 UnitedHealthcare returned through Stedi. Her casebook has no diagnosis or stage: the 271 doesn't carry them, so they're blank rather than invented.</p>
+  </section>
+
+  <div class="steps">
+
+    <div class="step">
+      <div class="num">01</div>
+      <div class="body">
+        <div class="head"><h3>Overview</h3><div class="route">/ehr</div></div>
+        <p class="do">Land here. Point at the four tiles and the Integrations panel on the right.</p>
+        <p class="say">"This is the whole tenant at a glance. One casebook, one pre-auth package, and on the right the honest state of every integration — including two that say <strong>not wired</strong>. Nothing on this screen is invented; if we don't have it, it says so."</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">02</div>
+      <div class="body">
+        <div class="head"><h3>Admin → EHR connections</h3><div class="route">/ehr/admin/connections</div></div>
+        <p class="do">Open the Connections tab. Point at the Stedi card's capability list.</p>
+        <p class="say">"These aren't checkboxes someone typed. The backend probes each capability and reports what it finds. Payer directory, eligibility, claim status, insurance discovery — all live. And then <strong>prior auth 278</strong>, greyed out, with the reason."</p>
+        <div class="flag stop"><b>Lead with</b><span>Stedi exposes no X12 278 endpoint. Verified against both the test and the production key — every candidate path returns 404. This is the biggest single constraint on the product, so say it early rather than let it surface as a surprise.</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">03</div>
+      <div class="body">
+        <div class="head"><h3>Ontada Connect</h3><div class="route">/ehr/connect</div></div>
+        <p class="do">Show the connection card and the "Panel search" note. Don't press Connect — it will fail.</p>
+        <p class="say">"The gateway is live and we can read its capability statement unauthenticated. Two things block the pull. Ontada supports <strong>authorization_code only</strong>, so a server can't authenticate itself — a person signs in once and the refresh token carries it. And our app registration is <strong>patient-scoped</strong>: one patient's record, no panel search."</p>
+        <div class="flag warn"><b>If pressed</b><span>The login is blocked on one value — the redirect URI registered against our client. Loopback is refused by Ontada's WAF; anything unregistered is refused by the authorization server. It's visible in the Ontada portal and it's a one-line fix.</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">04</div>
+      <div class="body">
+        <div class="head"><h3>Casebooks → Shaheen Farooq</h3><div class="route">/ehr/casebooks</div></div>
+        <p class="do">Open her casebook. Point at the empty clinical fields and the "No Ontada record" chip.</p>
+        <p class="say">"Real patient, real coverage, and a deliberately empty clinical record. Her demographics came out of the payer response. Diagnosis and stage are blank because nothing has told us yet — that's what the Ontada pull fills in."</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">05</div>
+      <div class="body">
+        <div class="head"><h3>Pre-Auth → her package → Lines</h3><div class="route">/ehr/preauth/pa-farooq-001</div></div>
+        <p class="do">Open the package on the Lines tab. Point at the drug-tier dropdown on each line.</p>
+        <p class="say">"Carboplatin and Paclitaxel. Each drug line carries a tier. The payer prices provider-administered drugs <strong>by tier</strong> — but the 271 never says which tier a J-code falls in. That's a formulary lookup. So a human sets it, and a line without one stays unpriced rather than guessed."</p>
+        <div class="flag note"><b>The point</b><span>This is the difference between a system you can put a patient's bill through and one you can't.</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">06</div>
+      <div class="body">
+        <div class="head"><h3>Benefits</h3><div class="route">Benefits tab · network = In</div></div>
+        <p class="do">Switch to Benefits. Scroll through Coverage → Out-of-pocket → Drug tiers.</p>
+        <p class="say">"This is her actual plan, parsed from roughly seven hundred benefit lines. Note what's <strong>not</strong> here: no coinsurance, no deductible. It's copay-driven. Test fixtures never look like this — they hand you a tidy twenty-five dollar copay and you build the wrong estimator."</p>
+        <dl class="figs">
+          <div class="fig"><dt>Plan</dt><dd>B4000 SHOP<small> · to 2027-03-31</small></dd></div>
+          <div class="fig"><dt>Benefit lines</dt><dd>699</dd></div>
+          <div class="fig"><dt>Drug tiers</dt><dd>21</dd></div>
+          <div class="fig"><dt>OOP max</dt><dd>$4,000<small> individual</small></dd></div>
+          <div class="fig"><dt>Remaining</dt><dd>~$3,760</dd></div>
+        </dl>
+        <p class="say">"The remaining figure is the one that matters. It's a different line in the response from the annual maximum, and it's what actually caps what she can be charged."</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">07</div>
+      <div class="body">
+        <div class="head"><h3>Cost estimate</h3><div class="route">Cost estimate tab</div></div>
+        <p class="do">Switch tabs. Read the three tiles, then the per-line basis column.</p>
+        <dl class="figs">
+          <div class="fig"><dt>Billed</dt><dd>$16,254</dd></div>
+          <div class="fig"><dt>Patient owes</dt><dd>$440</dd></div>
+          <div class="fig"><dt>Unpriced</dt><dd>1 line</dd></div>
+        </dl>
+        <p class="say">"Sixteen thousand billed, four hundred and forty to the patient — and every line says where its number came from. One line is unpriced and stays visible as unpriced. Today this takes a staff member two days on the phone. Here it's before treatment starts."</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">08</div>
+      <div class="body">
+        <div class="head"><h3>Flip the network</h3><div class="route">Benefits tab · network = Out</div></div>
+        <p class="do">Go back to Benefits, switch the dropdown to Out of network, return to the estimate.</p>
+        <dl class="figs">
+          <div class="fig"><dt>In network</dt><dd>$440</dd></div>
+          <div class="fig"><dt>Out of network</dt><dd>$2,875</dd></div>
+        </dl>
+        <p class="say">"Same regimen, same day, one field different. Six and a half times the cost to the patient. That's the conversation the financial counsellor needs to be able to have, and right now nobody can have it until the bill arrives."</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">09</div>
+      <div class="body">
+        <div class="head"><h3>Submission</h3><div class="route">Submission tab</div></div>
+        <p class="do">Press <strong>Attempt submission</strong>. Let it refuse. Read the message aloud.</p>
+        <p class="say">"It refuses, and it explains why. There is no 278 channel, so there is nothing to send. A system that invented an authorisation number here would be worse than useless — someone would treat a patient on the strength of it."</p>
+        <div class="flag note"><b>Close on this</b><span>The refusal is the most valuable thing in the demo. It's the difference between software you can trust with a patient's bill and software you can't.</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <section class="qa">
+    <div class="qa-head">
+      <h2>If you're asked</h2>
+      <p>The four questions most likely to come, and short answers that don't oversell.</p>
+    </div>
+
+    <div class="q">
+      <h4>Is this real data or a mock-up?</h4>
+      <p>Real. The coverage is a production 271 from UnitedHealthcare through Stedi, and our Stedi key is a production key — it reaches the real payer network. There are no fixtures in the codebase; the only seeded data is the cancer center and its facilities, which is tenant configuration an admin would type in on day one.</p>
+    </div>
+
+    <div class="q">
+      <h4>So when can we submit an authorisation?</h4>
+      <p>Not through this integration. It needs a clearinghouse that carries X12 278, the payer's own portal, or a Da Vinci PAS endpoint where a payer offers one. That's a commercial decision and a contract, not an engineering task — worth naming an owner for it in the room.</p>
+    </div>
+
+    <div class="q">
+      <h4>What happens when Ontada connects?</h4>
+      <p>The import is already built — <code>Patient/$everything</code>, mapped to a casebook, and where the bundle carries a <code>Coverage</code> resource it creates the pre-auth package with payer, member ID and group already filled. Temper expectations on the data though: the sandbox is backed by a store named <code>test-ui_smoke</code>, so expect a thin synthetic patient rather than a real oncology chart.</p>
+    </div>
+
+    <div class="q">
+      <h4>Can we put this in front of a customer?</h4>
+      <p>Not yet, and for one reason that isn't about features: the backend has no authentication at all. Before real patients it needs auth, role-based access, audit logging on every record read, and a BAA. That work hasn't started.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Figures verified 9 Sep 2026</span>
+    <span>Accumulators are live and will drift</span>
+    <span>docs/ONTADA-FINDINGS.md</span>
+  </footer>
+
+</div>
