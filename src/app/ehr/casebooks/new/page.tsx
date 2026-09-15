@@ -8,7 +8,8 @@ import { PageHeader, PageShell } from "@/components/ehr/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { SectionCard } from "@/components/ui/Card";
 import { Field, Select, TextInput } from "@/components/ui/Field";
-import { api } from "@/lib/api";
+import { api, type OntadaPatient } from "@/lib/api";
+import { PatientPicker } from "@/components/ehr/PatientPicker";
 import { useApi } from "@/hooks/useApi";
 
 export default function NewCasebookPage() {
@@ -31,7 +32,11 @@ export default function NewCasebookPage() {
   });
   const [saving, setSaving] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
-  const [bindOntada, setBindOntada] = React.useState(false);
+  // Binding is a choice of chart, not a yes/no: the token sees a whole panel,
+  // so "the authorised patient" never existed. Picking one is what makes the
+  // pull possible at all.
+  const [ontadaPatient, setOntadaPatient] = React.useState<OntadaPatient | null>(null);
+  const bindOntada = Boolean(ontadaPatient);
 
   const centerList = centers.data?.results ?? [];
   const siteList = (hospitals.data?.results ?? []).filter(
@@ -54,7 +59,7 @@ export default function NewCasebookPage() {
       let extra: Record<string, unknown> = {};
       if (bindOntada) {
         // Pull the authorised patient straight from iKnowMed and keep the bundle.
-        const rec = (await api.ontadaRecord()) as {
+        const rec = (await api.ontadaRecord(ontadaPatient!.id)) as {
           patient?: { id?: string };
           counts?: Record<string, number>;
         };
@@ -85,17 +90,32 @@ export default function NewCasebookPage() {
 
       <SectionCard title="Ontada record" icon={<Link2 className="h-4 w-4" strokeWidth={1.75} />}>
         {connected ? (
-          <label className="flex cursor-pointer items-start gap-2.5">
-            <input
-              type="checkbox"
-              checked={bindOntada}
-              onChange={(e) => setBindOntada(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--ink-300)] accent-[var(--teal-600)]"
+          ontadaPatient ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-[13px] leading-relaxed text-[var(--ink-700)]">
+                Binding to <strong>{ontadaPatient.name}</strong> (MRN {ontadaPatient.mrn}) — their
+                record is pulled from iKnowMed when this casebook is created.
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => setOntadaPatient(null)}>
+                Choose another
+              </Button>
+            </div>
+          ) : (
+            <PatientPicker
+              onSelect={(pt) => {
+                setOntadaPatient(pt);
+                // Prefill only what is still blank: a value typed by hand is a
+                // deliberate act and the chart does not get to overwrite it.
+                setForm((f) => ({
+                  ...f,
+                  patient_name: f.patient_name || pt.name,
+                  mrn: f.mrn || pt.mrn,
+                  birth_date: f.birth_date || pt.birth_date,
+                  gender: f.gender || pt.gender,
+                }));
+              }}
             />
-            <span className="text-[13px] leading-relaxed text-[var(--ink-700)]">
-              Bind this casebook to the authorised iKnowMed patient and pull their record now.
-            </span>
-          </label>
+          )
         ) : (
           <p className="text-[13px] leading-relaxed text-[var(--ink-400)]">
             Not connected to Ontada, so the casebook will hold only what you type here.{" "}

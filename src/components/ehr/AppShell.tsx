@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, Bell, ChevronDown, Check } from "lucide-react";
 import { NAV_ITEMS, activeNavHref } from "./nav";
+import { ReconnectBanner } from "./ReconnectBanner";
 import { api, type CancerCenter } from "@/lib/api";
 import { cn, initialsOf } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ export function AppShell({ children }: { readonly children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar onMenu={() => setDrawerOpen(true)} />
+        <ReconnectBanner />
         {/* pb-20 keeps the last row clear of the mobile bottom bar. */}
         <main className="min-w-0 flex-1 pb-20 md:pb-0">{children}</main>
       </div>

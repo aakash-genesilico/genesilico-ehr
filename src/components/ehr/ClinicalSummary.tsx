@@ -30,8 +30,16 @@ function toneFor(status: string) {
   return "neutral";
 }
 
-export function ClinicalSummaryView({ patientId }: { readonly patientId: string }) {
-  const s = useApi(() => api.ontadaSummary(patientId), [patientId]);
+export function ClinicalSummaryView({
+  patientId,
+  casebookId,
+}: {
+  readonly patientId: string;
+  /** Passing it lets a hand-entered stage satisfy the stage gap. Without it the
+   *  summary is the chart alone, which is the right answer for a raw chart view. */
+  readonly casebookId?: string;
+}) {
+  const s = useApi(() => api.ontadaSummary(patientId, casebookId), [patientId, casebookId]);
 
   if (s.loading) return <LoadingSkeleton count={4} />;
   if (s.error) return <Card><ErrorState error={s.error} onRetry={s.reload} /></Card>;
@@ -76,7 +84,14 @@ export function ClinicalSummaryView({ patientId }: { readonly patientId: string 
                 {p.icd10 && (
                   <span className="font-mono text-[11px] text-[var(--ink-500)]">{p.icd10}</span>
                 )}
-                {p.stage && <Chip tone="brand">Stage {p.stage}</Chip>}
+                {p.stage && (
+                  <Chip tone={p.stage_source === "entered by hand" ? "warning" : "brand"}>
+                    Stage {p.stage}
+                    {p.stage_source === "entered by hand" && (
+                      <span className="opacity-70"> · entered by hand</span>
+                    )}
+                  </Chip>
+                )}
                 {p.status && <Chip tone={toneFor(p.status)}>{p.status}</Chip>}
                 {p.onset && <span className="text-[11px] text-[var(--ink-400)]">{p.onset}</span>}
               </li>

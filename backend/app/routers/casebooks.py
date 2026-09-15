@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import config, db
 from ..errors import ApiError, Unconfigured, UpstreamError
 from ..integrations import stedi
+from ..services import casebook_gaps
 
 from .. import schemas as S
 
@@ -30,15 +31,22 @@ class CasebookIn(BaseModel):
     fhir_snapshot: dict = Field(default_factory=dict)
 
 
-def _out(c: db.Casebook) -> dict:
+def _out(c: db.Casebook, pkg: db.PreAuthPackage | None = None) -> dict:
     snap = c.fhir_snapshot or {}
+    # Derived on read. The stored column is the import's first guess; what the
+    # record actually contains now is what the UI must show — see
+    # services/casebook_gaps.
+    gap_fields = casebook_gaps.missing(c, pkg)
     return {
         "id": c.id, "patientName": c.patient_name, "mrn": c.mrn,
         "birthDate": c.birth_date, "gender": c.gender,
         "primaryDiagnosis": c.primary_diagnosis, "diagnosisCode": c.diagnosis_code,
         "stage": c.stage, "cancerCenterId": c.cancer_center_id,
         "hospitalId": c.hospital_id, "oncologist": c.oncologist,
-        "status": c.status, "ontadaFhirId": c.ontada_fhir_id,
+        "status": casebook_gaps.status_for(c, pkg), "ontadaFhirId": c.ontada_fhir_id,
+        # Named, so "Gaps pending" can say which gaps rather than leaving
+        # someone to guess which of eleven fields it means.
+        "gapFields": gap_fields,
         "resourceCounts": snap.get("counts") or {},
         # No CancerAI/Digital Twin endpoint is wired, so these stay null rather
         # than carrying a number nobody computed.
@@ -52,7 +60,11 @@ def _out(c: db.Casebook) -> dict:
 async def list_casebooks(session: AsyncSession = Depends(db.get_session)):
     rows = (await session.execute(
         db.select(db.Casebook).order_by(db.Casebook.updated_at.desc()))).scalars().all()
-    return {"count": len(rows), "results": [_out(c) for c in rows]}
+    pkgs = (await session.execute(
+        db.select(db.PreAuthPackage).order_by(db.PreAuthPackage.created_at.asc()))).scalars().all()
+    # Newest package wins, which the ascending sort leaves in place.
+    newest = {p.casebook_id: p for p in pkgs}
+    return {"count": len(rows), "results": [_out(c, newest.get(c.id)) for c in rows]}
 
 
 @router.post("", status_code=201, responses={201: {"model": S.CasebookOut}, **S.ERRORS})
@@ -69,7 +81,55 @@ async def get_casebook(casebook_id: str, session: AsyncSession = Depends(db.get_
     cb = await session.get(db.Casebook, casebook_id)
     if cb is None:
         raise ApiError(f"No casebook {casebook_id}", status=404)
-    return {**_out(cb), "fhirSnapshot": cb.fhir_snapshot or {}}
+    return {**_out(cb, await _newest_package(session, casebook_id)),
+            "fhirSnapshot": cb.fhir_snapshot or {}}
+
+
+async def _newest_package(session: AsyncSession, casebook_id: str) -> db.PreAuthPackage | None:
+    """The package carrying this casebook's coverage, if one exists."""
+    return (await session.execute(
+        db.select(db.PreAuthPackage)
+        .where(db.PreAuthPackage.casebook_id == casebook_id)
+        .order_by(db.PreAuthPackage.created_at.desc()))).scalars().first()
+
+
+class CasebookPatch(BaseModel):
+    """Fields a person may correct after import.
+
+    Deliberately narrow. Patient identity and the FHIR binding come from the
+    chart and must not be editable here — changing the MRN under a bound
+    casebook would silently detach it from the record it was built from.
+    """
+
+    stage: str | None = None
+    primary_diagnosis: str | None = None
+    diagnosis_code: str | None = None
+    oncologist: str | None = None
+    cancer_center_id: str | None = None
+    hospital_id: str | None = None
+
+
+@router.patch("/{casebook_id}", responses={200: {"model": S.CasebookOut}, **S.ERRORS})
+async def update_casebook(casebook_id: str, body: CasebookPatch,
+                          session: AsyncSession = Depends(db.get_session)):
+    """Correct a casebook by hand.
+
+    Exists because Ontada carries no stage on any Condition — measured on the
+    certification chart — while a payer's medical-necessity criteria are
+    stage-specific. Without this the gap the summary reports could never be
+    cleared by anyone.
+    """
+    cb = await session.get(db.Casebook, casebook_id)
+    if cb is None:
+        raise ApiError(f"No casebook {casebook_id}", status=404)
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise ApiError("Nothing to update.", status=400, code="empty_patch")
+    for k, v in changes.items():
+        setattr(cb, k, v if v is not None else "")
+    await session.commit()
+    await session.refresh(cb)
+    return _out(cb, await _newest_package(session, casebook_id))
 
 
 @router.get("/{casebook_id}/packages", responses={200: {"model": S.CasebookPackageList}, **S.ERRORS})

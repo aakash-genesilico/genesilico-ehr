@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import config, db
 from .errors import ApiError, api_error_handler, unhandled_handler
 from .routers import admin, casebooks, eligibility, health, ontada, payers, preauth
+from .services import token_keeper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("genesilico-ehr")
@@ -106,9 +107,18 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup() -> None:
         await db.init_db()
-        log.info("stedi=%s ontada_configured=%s db=%s",
+        # Renew the Ontada grant on a timer. Lazy renewal let the token sit
+        # idle overnight, and the grant was dead by morning — see
+        # services/token_keeper.
+        token_keeper.start()
+        log.info("stedi=%s ontada_configured=%s db=%s keeper=%ss",
                  config.stedi_mode(), bool(config.ONTADA_CLIENT_ID),
-                 config.DATABASE_URL.split("///")[-1])
+                 config.DATABASE_URL.split("///")[-1],
+                 config.ONTADA_KEEPALIVE_SECONDS)
+
+    @app.on_event("shutdown")
+    async def _shutdown() -> None:
+        await token_keeper.stop()
 
     return app
 

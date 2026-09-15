@@ -358,6 +358,38 @@ class OntadaAuthorize(BaseModel):
     state: str
 
 
+class OntadaPatient(BaseModel):
+    id: str
+    name: str
+    mrn: str
+    birth_date: str
+    gender: str
+    has_mrn: bool = Field(..., description="A real chart carries an MR identifier; a portal login does not")
+
+
+class OntadaPatients(BaseModel):
+    count: int
+    results: list[OntadaPatient]
+    panel_total: int
+    charts_total: int
+    filter_note: str
+
+
+class OntadaComplete(BaseModel):
+    """Finish a SMART login when the landing page cannot hand the code back.
+
+    The registered redirect URI is a single-page app whose router drops the
+    query string, so the browser never delivers `?code=` to us. Rather than
+    make someone run a script in a terminal, the UI takes the address they
+    landed on and posts it here; either the whole URL or the two values on
+    their own are accepted.
+    """
+
+    url: str | None = Field(None, description="The full address landed on, ?code= and all")
+    code: str | None = None
+    state: str | None = None
+
+
 class OntadaImport(BaseModel):
     casebook_id: str
     created: bool

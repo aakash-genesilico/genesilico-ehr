@@ -116,7 +116,14 @@ export default function PatientWorkspacePage() {
         subtitle={[c.primaryDiagnosis, c.stage && `Stage ${c.stage}`, pkg?.regimen].filter(Boolean).join(" · ") || undefined}
         meta={
           <>
-            <StatusChip status={c.status} />
+            {/* The status alone says something is missing but not what, and the
+                answer is one short list — so it rides along as a tooltip. */}
+            <span title={c.gapFields?.length ? `Still missing: ${c.gapFields.join(", ")}` : undefined}>
+              <StatusChip status={c.status} />
+            </span>
+            {c.gapFields && c.gapFields.length > 0 && (
+              <Chip tone="warning">missing: {c.gapFields.join(", ")}</Chip>
+            )}
             {c.mrn && <Chip tone="neutral" className="font-mono text-[10px]">{c.mrn}</Chip>}
             {pkg && <Chip tone="brand">{pkg.payer}</Chip>}
             {!c.ontadaFhirId && <Chip tone="warning">No Ontada record</Chip>}
@@ -155,7 +162,9 @@ export default function PatientWorkspacePage() {
                 <div>
                   <KeyValue label="Primary diagnosis">{c.primaryDiagnosis || "Not recorded"}</KeyValue>
                   <KeyValue label="ICD-10-CM" mono>{c.diagnosisCode || "—"}</KeyValue>
-                  <KeyValue label="Stage">{c.stage || "Not recorded"}</KeyValue>
+                  <KeyValue label="Stage">
+                    <StageField casebookId={c.id} value={c.stage} onSaved={cb.reload} />
+                  </KeyValue>
                   <KeyValue label="Oncologist">{c.oncologist || "Not recorded"}</KeyValue>
                 </div>
               </dl>
@@ -167,7 +176,7 @@ export default function PatientWorkspacePage() {
               something in it needs checking. */}
           {stage === "ehr" && fhirPatientId && (
             <>
-              <ClinicalSummaryView patientId={fhirPatientId} />
+              <ClinicalSummaryView patientId={fhirPatientId} casebookId={c.id} />
               <FilesView patientId={fhirPatientId} />
             </>
           )}
@@ -320,5 +329,82 @@ function Row({ label, value, warn }: { label: string; value: string; warn?: bool
         {value}
       </span>
     </div>
+  );
+}
+
+
+/* Ontada carries no stage on any Condition — not in `Condition.stage`, not in a
+   staging extension, and not as a TNM observation; it lives in the pathology
+   PDF. A payer's medical-necessity criteria are stage-specific, so the summary
+   reports its absence as a gap. This is the only way that gap can be closed,
+   and what is typed here is labelled `entered by hand` wherever it appears. */
+function StageField({
+  casebookId,
+  value,
+  onSaved,
+}: {
+  readonly casebookId: string;
+  readonly value: string;
+  readonly onSaved: () => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(value);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => setDraft(value), [value]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.updateCasebook(casebookId, { stage: draft.trim() });
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <span className="flex flex-wrap items-center gap-2">
+        <span>{value || "Not recorded"}</span>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="text-[12px] font-semibold text-[var(--teal-600)] hover:underline"
+        >
+          {value ? "Edit" : "Enter stage"}
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void save();
+          if (e.key === "Escape") { setDraft(value); setEditing(false); }
+        }}
+        placeholder="e.g. IIIB"
+        className="w-28 rounded-[var(--radius-sm)] border border-[var(--ink-200)] bg-white px-2 py-1 text-[13px] outline-none focus:border-[var(--teal-600)]"
+      />
+      <Button size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+      <button
+        type="button"
+        onClick={() => { setDraft(value); setEditing(false); }}
+        className="text-[12px] text-[var(--ink-400)] hover:underline"
+      >
+        Cancel
+      </button>
+      {error && <span className="text-[12px] text-[var(--red-700)]">{error}</span>}
+    </span>
   );
 }

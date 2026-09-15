@@ -60,6 +60,14 @@ ONTADA_CLIENT_AUTH = os.getenv("ONTADA_CLIENT_AUTH", "")
 # partial grant. Set this to what the registration actually carries.
 ONTADA_SCOPES = _clean(os.getenv("ONTADA_SCOPES", ""))
 
+# How often the background keeper looks at the token, and how long before expiry
+# it renews. MEASURED 2026-09-14: the access token lives 1799 s and Ontada
+# publishes no refresh-token lifetime, so the only defence against the grant
+# going stale is to keep exercising it. Renewing at T-600 s leaves ten minutes
+# of working token to retry inside if a renewal fails. 0 disables the keeper.
+ONTADA_KEEPALIVE_SECONDS = int(os.getenv("ONTADA_KEEPALIVE_SECONDS", "300"))
+ONTADA_REFRESH_SKEW_SECONDS = int(os.getenv("ONTADA_REFRESH_SKEW_SECONDS", "600"))
+
 # Where the browser lands after the OAuth dance completes.
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3045")
 

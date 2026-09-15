@@ -227,6 +227,16 @@ async def authorize_url(fhir_base: str = "", redirect_uri: str = "") -> dict:
 # --------------------------------------------------------------------------- #
 # Step 2 — the practice redirects back with a code; swap it for tokens
 # --------------------------------------------------------------------------- #
+def has_pending(state: str) -> bool:
+    """Whether this `state` still has a live PKCE verifier in this process.
+
+    Lets a caller tell a lapsed login window apart from a gateway failure —
+    they need opposite responses: start again here, versus wait and retry.
+    """
+    pending = _PENDING.get(state)
+    return bool(pending) and (time.time() - pending["created"]) <= _PENDING_TTL
+
+
 async def exchange_code(code: str, state: str) -> dict:
     pending = _PENDING.pop(state, None)
     if not pending:
@@ -363,6 +373,52 @@ async def fetch_record(token: dict,
             out["errors"][rtype] = str(e)
     out["counts"] = {k: len(v) for k, v in out["resources"].items()}
     return out
+
+
+async def search_panel(token: dict, page_limit: int = 5) -> list[dict]:
+    """Every patient this practitioner can see, as flat rows.
+
+    Deliberately not `fetch()`: that pins `patient=<id>` on every request, which
+    is meaningless when the patient is what we are looking for.
+
+    MEASURED 2026-09-13: `/Patient` returns ~224 records that are two different
+    populations. Around 200 are portal login accounts — UUID ids, no birth date,
+    no gender, no MR identifier — and they bury the handful of real charts. The
+    `has_mrn` flag below is what tells them apart; the caller decides whether to
+    show the rest, but nothing should default to a list that is 90% noise.
+    """
+    base = token["fhir_base"].rstrip("/")
+    url = f"{base}/Patient?_count=100"
+    rows, pages = [], 0
+    async with httpx.AsyncClient(timeout=60) as c:
+        while url and pages < page_limit:
+            bundle = await _get(c, url, token)
+            for e in bundle.get("entry", []):
+                r = e.get("resource") or {}
+                if r.get("resourceType") != "Patient":
+                    continue
+                rows.append(_patient_row(r))
+            url = next((l["url"] for l in bundle.get("link", [])
+                        if l.get("relation") == "next"), None)
+            pages += 1
+    return rows
+
+
+def _patient_row(r: dict) -> dict:
+    name = (r.get("name") or [{}])[0]
+    given = " ".join(name.get("given") or [])
+    family = name.get("family") or ""
+    mrn = next((i.get("value") for i in (r.get("identifier") or [])
+                if (i.get("type", {}).get("coding") or [{}])[0].get("code") == "MR"), "")
+    return {
+        "id": r.get("id", ""),
+        "name": f"{given} {family}".strip() or name.get("text") or "",
+        "mrn": mrn or "",
+        "birth_date": r.get("birthDate") or "",
+        "gender": r.get("gender") or "",
+        # A real chart carries a medical record number. A login account does not.
+        "has_mrn": bool(mrn),
+    }
 
 
 async def _get_patient(token: dict) -> dict:

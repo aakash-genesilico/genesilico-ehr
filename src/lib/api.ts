@@ -45,6 +45,9 @@ export interface OntadaFileList {
 export interface SummaryProblem {
   readonly display: string; readonly icd10: string; readonly snomed: string;
   readonly status: string; readonly onset: string; readonly stage: string;
+  /** "chart" when the Condition carried the stage, "entered by hand" when a
+   *  person supplied it. A payer citation may only rest on the first. */
+  readonly stage_source?: string;
 }
 export interface SummaryDrug {
   readonly drug: string; readonly rxnorm: string; readonly orders: number;
@@ -151,6 +154,24 @@ export interface Capabilities {
   cancerai_digital_twin: { available: boolean; reason: string };
 }
 
+export interface OntadaPatient {
+  id: string;
+  name: string;
+  mrn: string;
+  birth_date: string;
+  gender: string;
+  /** A real chart carries an MR identifier; a portal login account does not. */
+  has_mrn: boolean;
+}
+
+export interface OntadaPatients {
+  count: number;
+  results: OntadaPatient[];
+  panel_total: number;
+  charts_total: number;
+  filter_note: string;
+}
+
 export interface OntadaStatus {
   configured: boolean;
   connected: boolean;
@@ -165,6 +186,21 @@ export interface OntadaStatus {
   expires_at?: string;
   scope?: string;
   patient_context?: string | null;
+  fhir_user?: string | null;
+  /** What the backend's background token keeper has been doing. `reauth_required`
+   *  is the one to act on: the grant is gone and only a browser login restores it. */
+  keeper?: {
+    enabled: boolean;
+    every_seconds: number;
+    renews_at_t_minus_seconds: number;
+    last_refresh_at?: string | null;
+    last_refresh_reason?: string | null;
+    rotated?: boolean;
+    reauth_required?: boolean;
+    last_error?: string | null;
+    failures?: number;
+    refreshes?: number;
+  };
 }
 
 export interface CancerCenter {
@@ -204,6 +240,8 @@ export interface Casebook {
   hospitalId: string;
   oncologist: string;
   status: string;
+  /** The fields still empty, in plain words — what "Gaps pending" is about. */
+  gapFields?: string[];
   ontadaFhirId: string | null;
   resourceCounts: Record<string, number>;
   cancerAiConfidence: number | null;
@@ -411,6 +449,15 @@ export const api = {
 
   ontadaStatus: () => get<OntadaStatus>("/ontada/status"),
   ontadaAuthorize: () => get<{ url: string; state: string }>("/ontada/authorize"),
+  /** Finish a login by handing back the address the browser landed on — the
+   *  registered redirect URI is an app that strips the query string. */
+  ontadaComplete: (url: string) => post<OntadaStatus>("/ontada/complete", { url }),
+  /** Exercise the refresh grant now, rather than waiting for the token to age out. */
+  ontadaRefresh: () => post<OntadaStatus>("/ontada/refresh"),
+  /** The practitioner's panel — how a caller finds the patient_id every other
+   *  Ontada read needs. Portal login accounts are filtered out by default. */
+  ontadaPatients: (q?: string, includeLogins = false) =>
+    get<OntadaPatients>(`/ontada/patients${qp({ q, include_logins: includeLogins ? "true" : undefined })}`),
   ontadaRecord: (patientId?: string) =>
     get<Record<string, unknown>>(`/ontada/record${qp({ patient_id: patientId })}`),
   // The connection is provider-scoped, so every read names its patient. Without
@@ -421,8 +468,10 @@ export const api = {
    *  browser holds no Ontada token and a redirect to the FHIR server would 401. */
   ontadaFileUrl: (binaryId: string, download = false) =>
     `${API_BASE}/ontada/file/${encodeURIComponent(binaryId)}${download ? "?download=true" : ""}`,
-  ontadaSummary: (patientId: string) =>
-    get<ClinicalSummary>(`/ontada/summary${qp({ patient_id: patientId })}`),
+  /** `casebookId` lets a hand-entered stage count towards the gaps; the value
+   *  comes back marked `entered by hand`, never as something the chart said. */
+  ontadaSummary: (patientId: string, casebookId?: string) =>
+    get<ClinicalSummary>(`/ontada/summary${qp({ patient_id: patientId, casebook_id: casebookId })}`),
   ontadaResource: (resourceType: string, patientId: string) =>
     get<{ resourceType: string; count: number; items: FhirResource[]; withheld_note?: string | null }>(
       `/ontada/resource/${encodeURIComponent(resourceType)}${qp({ patient_id: patientId })}`,
@@ -431,7 +480,7 @@ export const api = {
     get<{ counts: Record<string, number>; pages: number }>(
       `/ontada/everything${qp({ patient_id: patientId })}`,
     ),
-  ontadaImport: () =>
+  ontadaImport: (patientId?: string) =>
     post<{
       casebook_id: string;
       created: boolean;
@@ -439,13 +488,16 @@ export const api = {
       counts: Record<string, number>;
       coverage: { payer_name: string; member_id: string; group_number: string };
       unmapped: string[];
-    }>("/ontada/import"),
+    }>(`/ontada/import${qp({ patient_id: patientId })}`),
 
   payers: (q: string) => get<{ count: number; results: Payer[] }>(`/payers?q=${encodeURIComponent(q)}`),
 
   casebooks: () => get<{ count: number; results: Casebook[] }>("/casebooks"),
   casebook: (id: string) => get<Casebook & { fhirSnapshot: Record<string, unknown> }>(`/casebooks/${id}`),
   createCasebook: (b: Record<string, unknown>) => post<Casebook>("/casebooks", b),
+  /** Correct a casebook by hand — stage above all, which no Ontada Condition carries. */
+  updateCasebook: (id: string, patch: Record<string, unknown>) =>
+    request<Casebook>(`/casebooks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
   casebookPackages: (id: string) =>
     get<{ count: number; results: CasebookPackage[] }>(`/casebooks/${id}/packages`),
   discoverCoverage: (id: string) => post<CoverageDiscovery>(`/casebooks/${id}/discover-coverage`),

@@ -124,6 +124,10 @@ def problems(conditions: list[dict]) -> list[dict]:
         })
         out[-1]["stage"] = next(
             (t for st in (c.get("stage") or []) if (t := _text(st.get("summary")))), "")
+        # Where a value came from decides what may be done with it. A stage read
+        # off the chart can be cited to a payer; one typed by a person cannot,
+        # and the two must never look the same on screen.
+        out[-1]["stage_source"] = "chart" if out[-1]["stage"] else ""
     out.sort(key=lambda p: (p["status"] in _ACTIVE, p["onset"]), reverse=True)
     return out
 
@@ -286,6 +290,16 @@ def summarise(resources: dict[str, list[dict]], *, casebook: dict | None = None)
                   resources.get("DiagnosticReport") or [])
 
     primary = next((p for p in probs if p["status"] in _ACTIVE), probs[0] if probs else None)
+
+    # Ontada carries no stage on any Condition — measured 2026-09-14 on the
+    # certification chart: no `Condition.stage`, no staging extension, and no
+    # TNM observation among 86. It lives in the pathology PDF. So a stage typed
+    # by a user is the only way this gap ever closes, and taking it here is what
+    # makes that entry worth doing.
+    entered_stage = ((casebook or {}).get("stage") or "").strip()
+    if primary and not primary.get("stage") and entered_stage:
+        primary["stage"] = entered_stage
+        primary["stage_source"] = "entered by hand"
     lead = next((m for m in meds if m["orders"] > 1), meds[0] if meds else None)
 
     # ---- narrative, assembled only from what is present -------------------
@@ -341,8 +355,8 @@ def summarise(resources: dict[str, list[dict]], *, casebook: dict | None = None)
         gaps.append("No primary diagnosis — a pre-auth cannot state medical necessity without one.")
     elif not primary["icd10"]:
         gaps.append("Primary diagnosis has no ICD-10 code; only SNOMED is on the chart.")
-    # Stage is read off Condition.stage, not off the casebook — the chart is the
-    # source of truth, and a blank casebook field could just mean "not imported".
+    # Satisfied by the chart or by a hand entry, and by nothing else: an empty
+    # casebook field means "nobody has supplied it", which is still a gap.
     if primary and not primary.get("stage"):
         gaps.append(
             f"No stage recorded on {primary['display']}. A payer's medical-necessity "

@@ -27,7 +27,7 @@ Verified live, not assumed — Stedi on **9 Sep 2026**, Ontada on **13 Sep 2026*
 | Stedi claim status 276/277 | **Real**, production key only | 403 in test mode, 400 (validating) in production |
 | Stedi insurance discovery | **Real**, production key only | Same |
 | Ontada FHIR gateway | **Connected** | Signed in 13 Sep 2026 as `practitioner-aakash@`; 224 patients readable |
-| Ontada SMART OAuth | **Real** | Private (Symmetric) + PKCE; `offline_access` granted, so the refresh token holds |
+| Ontada SMART OAuth | **Real** | Private (Symmetric) + PKCE. The refresh token **rotates on every renewal** and Ontada publishes no lifetime for it, so an idle grant dies — left unused ~30 h it returned `400 [invalid_grant]`. `services/token_keeper` renews every 5 min, at T-10 min, so it never goes idle |
 | Ontada documents | **Real** | 44 attachments referenced, **34 retrievable** as actual PDFs and scanned images |
 | Ontada patient context | **Unusable** | `launch/patient` loops forever in Ontada's own context resolver — see below |
 | **Prior auth (X12 278)** | **Does not exist** | Every candidate path 404s on **both** keys |
